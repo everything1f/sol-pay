@@ -1,33 +1,41 @@
 # sol-pay
 
-A one-screen page for paying at a till from SOL. Open it inside Phantom, type a dollar
-amount, tap Pay, approve once. A single transaction swaps SOL to USDC and delivers the
+A one-screen page for paying at a till from SOL. Open it inside Phantom or Solflare,
+type a dollar amount, tap Pay, approve once. A single transaction swaps SOL to USDC and delivers the
 USDC straight to a Coinbase deposit address, which funds the Coinbase debit card.
 
 There is no backend, no API key and no RPC. The page talks only to Jupiter's public API,
-and Phantom does all the signing.
+and the wallet does all the signing.
 
 ## How a payment works
 
-1. On load the page connects to Phantom (silently once the site is trusted) and fetches
+1. On load the page connects to the wallet (silently once the site is trusted) and fetches
    the SOL price so it can show "≈ X SOL" as you type.
 2. Shortly after you stop typing it asks Jupiter for a quote in the background, so Pay
-   can open Phantom without waiting.
+   can open the wallet without waiting.
 3. On Pay it takes that quote, or a fresh one if the first is older than 4 seconds. The
    quote is ExactOut: Coinbase receives exactly the amount typed, and the SOL spent is
    capped.
-4. The transaction is checked (see below). If any check fails, nothing is sent to Phantom.
-5. Phantom signs. Jupiter broadcasts the signed transaction and reports the result.
+4. The transaction is checked (see below). If any check fails, nothing is sent to the wallet.
+5. The wallet signs. Jupiter broadcasts the signed transaction and reports the result.
 6. The receipt shows the USDC delivered, the SOL spent and a Solscan link.
 
 If Jupiter stops honouring ExactOut, the page sizes an ExactIn swap instead, so that the
-guaranteed minimum output still covers the amount. If Phantom cannot sign without
-sending, or Jupiter will not accept the copy Phantom signed, Phantom sends the
+guaranteed minimum output still covers the amount. If the wallet cannot sign without
+sending, or Jupiter will not accept the copy it signed, the wallet sends the
 transaction itself and the receipt says so.
+
+## Wallets
+
+Phantom and Solflare are supported (`src/wallet.ts`). Inside a wallet's own browser the
+page finds that wallet and uses it. In a desktop browser with both extensions it asks
+which to use, remembers the answer, and lets you change it by tapping the wallet's name
+in the header. Opened where there is no wallet, it offers a link into each wallet's
+browser. Any other wallet is ignored.
 
 ## Safety checks
 
-Every quote must pass all of these before Phantom is asked to sign (`src/verify.ts`):
+Every quote must pass all of these before the wallet is asked to sign (`src/verify.ts`):
 
 - It sells SOL, buys USDC, and was made for the connected wallet.
 - The amount is above zero and at most `MAX_USD`.
@@ -75,12 +83,12 @@ npm test        # amount parsing, sizing maths, safety checks, payment flow
 npm run build   # production build in dist/
 ```
 
-`npm run dev` adds a "Simulate" menu for walking through every outcome without Phantom
-or money: success, a rejected signature, an expired quote, each kind of refusal, a lost
+`npm run dev` adds a "Simulate" menu for walking through every outcome without a wallet
+or money, for either wallet or both: success, a rejected signature, an expired quote, each kind of refusal, a lost
 confirmation, and so on. "Live Jupiter quotes" uses real quotes and fakes only the send.
 None of that code is in the production build.
 
-Adding `?debug` to the URL shows a running log on screen: what Phantom offered, which
+Adding `?debug` to the URL shows a running log on screen: what the wallet offered, which
 signing path was used, and what Jupiter answered. Useful for the first run on a phone.
 
 ## Deploying
@@ -102,15 +110,18 @@ deployment against the build.
 The security headers are in `public/_headers`, a format all three read. The
 Content-Security-Policy allows the page's own files and `https://api.jup.ag` only.
 
-If the page ever shows "Phantom not found" while open inside Phantom, the policy is the
-first thing to check: it would mean Phantom injects its wallet in a way the policy blocks.
+If the page ever shows "No wallet found" while open inside a wallet's browser, the policy
+is the first thing to check: it would mean the wallet injects itself in a way the policy
+blocks.
 
 ## The iOS Shortcut
 
-The Shortcut opens Phantom's in-app browser on the page with a browse deeplink:
+A Shortcut opens the wallet's in-app browser on the page with a browse deeplink, one
+Shortcut per wallet:
 
 ```
 https://phantom.com/ul/browse/<URL-encoded page address>?ref=<URL-encoded page address>
+https://solflare.com/ul/v1/browse/<URL-encoded page address>?ref=<URL-encoded page address>
 ```
 
 For a site at `https://example.netlify.app` that is:

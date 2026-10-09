@@ -16,7 +16,7 @@
     <!-- sol-pay -->
     <main id="app" data-state="entry">
       <header class="route">
-        <span id="who">Connecting</span>
+        <button type="button" id="who" disabled>Connecting</button>
         <span>to Coinbase <b id="dest"></b></span>
       </header>
 
@@ -57,6 +57,11 @@
         <span class="sum" id="sum"></span>
         <i class="pulse" aria-hidden="true"></i>
       </button>
+
+      <div class="choose" id="choose" hidden>
+        <button type="button" class="pay" data-wallet="phantom">Phantom</button>
+        <button type="button" class="pay" data-wallet="solflare">Solflare</button>
+      </div>
 
       <section class="slip" id="slip" aria-hidden="true">
         <h2>

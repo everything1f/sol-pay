@@ -1,4 +1,4 @@
-// Development only: a pretend Phantom and a pretend Jupiter, so every screen can be
+// Development only: pretend wallets and a pretend Jupiter, so every screen can be
 // reached without a wallet and without moving money. `npm run dev` loads this;
 // the production build leaves it out entirely.
 
@@ -25,7 +25,11 @@ const CASES: Record<string, string> = {
   'exact-in': 'ExactOut unavailable, sized ExactIn instead',
   ask: 'Site not trusted yet (connect prompt)',
   declined: 'Connection declined',
-  'no-phantom': 'Opened outside Phantom',
+  'no-wallet': 'Opened outside a wallet',
+  solflare: 'Solflare: payment succeeds',
+  'solflare-old': 'Solflare through its older API',
+  'solflare-ask': 'Solflare: site not trusted yet',
+  both: 'Both wallets installed (choose one)',
   slow: 'Slow network',
   live: 'Live Jupiter quotes, execution faked',
 };
@@ -46,7 +50,11 @@ export function install(): void {
   addPicker(scenario);
 
   const pace = scenario === 'slow' ? 5 : 1;
-  if (scenario !== 'no-phantom') installWallet(scenario, scenario === 'live' ? LIVE_WALLET : fakeKey(100), pace);
+  const solflare = scenario.startsWith('solflare');
+  if (scenario !== 'no-wallet' && !solflare) {
+    installWallet('Phantom', scenario, scenario === 'live' ? LIVE_WALLET : fakeKey(100), pace);
+  }
+  if (solflare || scenario === 'both') installWallet('Solflare', scenario, fakeKey(101), pace);
   installJupiter(scenario, pace);
 }
 
@@ -58,7 +66,7 @@ function addPicker(current: string): void {
   for (const [value, label] of Object.entries(CASES)) select.add(new Option(label, value, false, value === current));
   select.addEventListener('change', () => {
     sessionStorage.setItem('case', select.value);
-    localStorage.removeItem('send-only');
+    for (const key of ['send-only', 'send-only-solflare', 'wallet']) localStorage.removeItem(key);
     location.search = '';
   });
   // Labelled, so it is plain that this menu is a preview tool and not part of the page.
@@ -78,33 +86,44 @@ function signed(transaction: Uint8Array): Uint8Array {
   return out;
 }
 
-function installWallet(scenario: string, address: string, pace: number): void {
-  let trusted = scenario !== 'ask' && scenario !== 'declined';
+function installWallet(name: 'Phantom' | 'Solflare', scenario: string, address: string, pace: number): void {
+  const phantom = name === 'Phantom';
+  let trusted = !['ask', 'declined', 'solflare-ask'].includes(scenario);
   let declineNext = scenario === 'declined';
+  let connected = false;
 
   const approve = async () => {
-    await sleep(1300 * pace); // the time it takes to read Phantom's sheet and tap Approve
+    await sleep(1300 * pace); // the time it takes to read the wallet's sheet and tap Approve
     if (scenario === 'reject') throw rejection();
   };
 
+  /** The wallet's own connect prompt. */
+  const ask = async () => {
+    await sleep(900 * pace);
+    if (declineNext) {
+      declineNext = false;
+      throw rejection();
+    }
+    trusted = true;
+  };
+
   const provider = {
-    isPhantom: true,
+    isPhantom: phantom,
+    isSolflare: !phantom,
     publicKey: undefined as { toString(): string } | undefined,
     on() {},
     async connect(options?: { onlyIfTrusted?: boolean }) {
-      if (options?.onlyIfTrusted) {
+      // Only Phantom understands onlyIfTrusted. Solflare's older API just prompts.
+      if (phantom && options?.onlyIfTrusted) {
         await sleep(40);
         if (!trusted) throw rejection();
       } else {
-        await sleep(900 * pace);
-        if (declineNext) {
-          declineNext = false;
-          throw rejection();
-        }
-        trusted = true;
+        await ask();
       }
+      connected = true;
       provider.publicKey = { toString: () => address };
-      return { publicKey: provider.publicKey };
+      // Phantom answers with the key; Solflare answers true and leaves the key on itself.
+      return phantom ? { publicKey: provider.publicKey } : true;
     },
     // The older API takes and returns web3.js-style objects.
     async signTransaction(transaction: { version?: unknown; serialize(): Uint8Array }) {
@@ -115,21 +134,36 @@ function installWallet(scenario: string, address: string, pace: number): void {
     },
     async signAndSendTransaction(transaction: { serialize(): Uint8Array }) {
       await approve();
-      return { signature: b58encode(signed(transaction.serialize()).subarray(1, 65)) };
+      const signature = b58encode(signed(transaction.serialize()).subarray(1, 65));
+      return phantom ? { signature } : signature;
     },
   };
-  (window as any).phantom = { solana: provider };
+  if (phantom) (window as any).phantom = { solana: provider };
+  else (window as any).solflare = provider;
 
-  if (scenario === 'legacy') return; // no Wallet Standard: forces the on-demand web3.js path
+  // No Wallet Standard: forces the on-demand web3.js path.
+  if (scenario === 'legacy' || scenario === 'solflare-old') return;
 
   const account = { address };
   const standard = {
-    name: 'Phantom',
+    name,
     get accounts() {
-      return provider.publicKey ? [account] : [];
+      return connected ? [account] : [];
     },
     features: {
-      'standard:connect': { connect: async () => ({ accounts: [account] }) },
+      'standard:connect': {
+        connect: async (input?: { silent?: boolean }) => {
+          if (input?.silent) {
+            await sleep(40);
+            if (!trusted) return { accounts: [] };
+          } else if (!connected) {
+            await ask();
+          }
+          connected = true;
+          return { accounts: [account] };
+        },
+      },
+      'standard:events': { on: () => () => {} },
       'solana:signTransaction': {
         signTransaction: async ({ transaction }: { transaction: Uint8Array }) => {
           await approve();

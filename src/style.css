@@ -75,6 +75,11 @@ button {
   touch-action: manipulation;
 }
 
+/* Author display rules would otherwise override the hidden attribute. */
+[hidden] {
+  display: none !important;
+}
+
 button:focus-visible,
 a:focus-visible {
   outline: 2px solid var(--paper);
@@ -110,6 +115,20 @@ main {
 .route .on {
   font-weight: inherit;
   color: var(--paper);
+}
+
+.route button {
+  letter-spacing: inherit;
+}
+
+.route button:disabled {
+  cursor: default;
+}
+
+/* Tappable only when there is more than one wallet to choose from. */
+.route button:enabled {
+  text-decoration: underline dotted;
+  text-underline-offset: 4px;
 }
 
 /* The amount, set like a shelf price: dollars large, cents raised */
@@ -285,6 +304,29 @@ main {
 
 .pay .sum {
   font: 700 30px/1 var(--numerals);
+}
+
+/* One button per wallet, in the Pay bar's place, when a wallet has to be opened or chosen. */
+.choose {
+  display: flex;
+  gap: 10px;
+  margin: 10px var(--edge) 0;
+}
+
+.choose .pay {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 0 10px;
+  justify-content: center;
+  font-size: 17px;
+  white-space: nowrap;
+  /* The cream fill is a layer behind the label, which here is bare text. */
+  isolation: isolate;
+}
+
+.choose .pay::before {
+  z-index: -1;
 }
 
 /* A bar that runs along the bottom while the page is waiting on the network. */

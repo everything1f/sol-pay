@@ -1,13 +1,20 @@
-// Phantom. All signing happens inside the wallet; this file only passes bytes back and forth.
+// Wallets. All signing happens inside the wallet; this file only passes bytes back and forth.
 //
-// Phantom exposes two interfaces. Wallet Standard takes raw transaction bytes, so it is
-// used whenever Phantom offers it. The older injected provider wants a web3.js object,
-// which is loaded on demand (see legacy.ts) and never touches the main bundle.
+// Two wallets are supported, Phantom and Solflare. Each can be reached two ways.
+// Wallet Standard takes raw transaction bytes, so it is used for signing whenever the
+// wallet offers it. The older injected provider wants a web3.js object, which is
+// loaded on demand (see legacy.ts) and never touches the main bundle.
 
 import { b58encode } from './base58';
 
-/** The user dismissed Phantom's prompt. Not an error worth showing. */
+/** The user dismissed the wallet's prompt. Not an error worth showing. */
 export class Rejected extends Error {}
+
+/** A wallet this page can work with. */
+export interface Kind {
+  id: 'phantom' | 'solflare';
+  name: string;
+}
 
 interface StandardAccount {
   address: string;
@@ -18,6 +25,45 @@ interface StandardWallet {
   features: Record<string, any>;
 }
 type Provider = any;
+
+interface Driver extends Kind {
+  /** The wallet's own object on the page, if the wallet is here. */
+  injected(): Provider | undefined;
+  /** Its "open this page in my browser" link, up to the encoded page address. */
+  browse: string;
+  /**
+   * How to connect when both routes exist. Phantom's injected connect takes
+   * { onlyIfTrusted: true } for a connect with no prompt, so it goes first there.
+   * Solflare documents no such option, so its Wallet Standard connect is used.
+   */
+  connectVia: 'injected' | 'standard';
+}
+
+const DRIVERS: readonly Driver[] = [
+  {
+    id: 'phantom',
+    name: 'Phantom',
+    browse: 'https://phantom.com/ul/browse/',
+    connectVia: 'injected',
+    injected: () => {
+      const provider = (window as any).phantom?.solana;
+      return provider?.isPhantom ? provider : undefined;
+    },
+  },
+  {
+    id: 'solflare',
+    name: 'Solflare',
+    browse: 'https://solflare.com/ul/v1/browse/',
+    connectVia: 'standard',
+    injected: () => {
+      const provider = (window as any).solflare;
+      return provider?.isSolflare ? provider : undefined;
+    },
+  },
+];
+
+/** Every wallet the page knows, whether or not it is present. */
+export const supported: readonly Kind[] = DRIVERS;
 
 const CHAIN = 'solana:mainnet';
 const SIGN = 'solana:signTransaction';
@@ -40,9 +86,25 @@ function discover(): void {
 }
 discover();
 
-export function provider(): Provider | undefined {
-  const injected = (window as any).phantom?.solana;
-  return injected?.isPhantom ? injected : undefined;
+const driver = (kind: Kind): Driver => DRIVERS.find((d) => d.id === kind.id)!;
+
+/** The wallet's Wallet Standard entry. Matched by name, so an unknown wallet is never used. */
+const standard = (kind: Kind): StandardWallet | undefined => standardWallets.find((w) => w.name === kind.name);
+
+/** The supported wallets that are present on this page, Phantom first. */
+export function available(): Kind[] {
+  return DRIVERS.filter((d) => d.injected() || standard(d));
+}
+
+/** A link that opens `page` inside the wallet's own browser. */
+export function browseLink(kind: Kind, page: string, origin: string): string {
+  return `${driver(kind).browse}${encodeURIComponent(page)}?ref=${encodeURIComponent(origin)}`;
+}
+
+/** Whether to talk to the wallet's injected object rather than its Wallet Standard entry. */
+function viaInjected(d: Driver): Provider | undefined {
+  const injected = d.injected();
+  return injected && (d.connectVia === 'injected' || !standard(d)) ? injected : undefined;
 }
 
 function wasRejected(error: unknown): boolean {
@@ -59,24 +121,44 @@ async function prompt<T>(ask: () => Promise<T>): Promise<T> {
 }
 
 /** Connects and returns the wallet address. `silent` never opens a prompt. */
-export function connect(silent: boolean): Promise<string> {
+export function connect(kind: Kind, silent: boolean): Promise<string> {
   return prompt(async () => {
-    const injected = provider();
-    if (!injected) throw new Error('Phantom is not available on this page.');
-    const result = await injected.connect(silent ? { onlyIfTrusted: true } : undefined);
-    return String(result?.publicKey ?? injected.publicKey);
+    const d = driver(kind);
+    const injected = viaInjected(d);
+    const wallet = standard(d);
+    let address: unknown;
+    if (injected) {
+      // Only Phantom's injected connect is known to have a no-prompt form.
+      if (silent && d.connectVia !== 'injected') throw new Rejected();
+      const result = await injected.connect(silent ? { onlyIfTrusted: true } : undefined);
+      address = result?.publicKey ?? injected.publicKey;
+    } else if (wallet) {
+      const result = await wallet.features['standard:connect'].connect(silent ? { silent: true } : undefined);
+      address = (result?.accounts ?? wallet.accounts)[0]?.address;
+    } else {
+      throw new Error(`${d.name} is not available on this page.`);
+    }
+    if (!address) throw new Rejected();
+    return String(address);
   });
 }
 
 /** Calls back with the new address, or undefined when the wallet disconnects. */
-export function onAccountChange(changed: (address: string | undefined) => void): void {
-  const injected = provider();
-  injected?.on?.('accountChanged', (key: unknown) => changed(key ? String(key) : undefined));
-  injected?.on?.('disconnect', () => changed(undefined));
+export function onAccountChange(kind: Kind, changed: (address: string | undefined) => void): void {
+  const d = driver(kind);
+  const injected = viaInjected(d);
+  if (injected) {
+    injected.on?.('accountChanged', (key: unknown) => changed(key ? String(key) : undefined));
+    injected.on?.('disconnect', () => changed(undefined));
+    return;
+  }
+  standard(d)?.features['standard:events']?.on('change', (change: { accounts?: readonly StandardAccount[] }) => {
+    if (change.accounts) changed(change.accounts[0]?.address);
+  });
 }
 
-async function standardAccount(address: string): Promise<[StandardWallet, StandardAccount] | undefined> {
-  const wallet = standardWallets.find((w) => w.name === 'Phantom');
+async function standardAccount(kind: Kind, address: string): Promise<[StandardWallet, StandardAccount] | undefined> {
+  const wallet = standard(kind);
   if (!wallet) return undefined;
   const find = () => wallet.accounts.find((a) => a.address === address);
   if (!find()) {
@@ -86,10 +168,10 @@ async function standardAccount(address: string): Promise<[StandardWallet, Standa
   return account ? [wallet, account] : undefined;
 }
 
-/** What this Phantom offers, for choosing a flow and for the debug readout. */
-export async function abilities(address: string) {
-  const [wallet] = (await standardAccount(address)) ?? [];
-  const injected = provider();
+/** What this wallet offers, for choosing a flow and for the debug readout. */
+export async function abilities(kind: Kind, address: string) {
+  const [wallet] = (await standardAccount(kind, address)) ?? [];
+  const injected = driver(kind).injected();
   return {
     standardSign: !!wallet?.features[SIGN],
     standardSend: !!wallet?.features[SEND],
@@ -103,32 +185,33 @@ export function prepareLegacy(): void {
   void import('./legacy').catch(() => {});
 }
 
-/** Asks Phantom to sign without sending. Returns the signed transaction. */
-export function sign(address: string, transaction: Uint8Array): Promise<Uint8Array> {
+/** Asks the wallet to sign without sending. Returns the signed transaction. */
+export function sign(kind: Kind, address: string, transaction: Uint8Array): Promise<Uint8Array> {
   return prompt(async () => {
-    const standard = await standardAccount(address);
-    const feature = standard?.[0].features[SIGN];
-    if (standard && feature) {
-      const [out] = await feature.signTransaction({ account: standard[1], transaction, chain: CHAIN });
+    const found = await standardAccount(kind, address);
+    const feature = found?.[0].features[SIGN];
+    if (found && feature) {
+      const [out] = await feature.signTransaction({ account: found[1], transaction, chain: CHAIN });
       return new Uint8Array(out.signedTransaction);
     }
     const { toVersioned } = await import('./legacy');
-    const signed = await provider().signTransaction(await toVersioned(transaction));
+    const signed = await driver(kind).injected().signTransaction(await toVersioned(transaction));
     return new Uint8Array(signed.serialize());
   });
 }
 
-/** Asks Phantom to sign and broadcast. Returns the transaction signature. */
-export function signAndSend(address: string, transaction: Uint8Array): Promise<string> {
+/** Asks the wallet to sign and broadcast. Returns the transaction signature. */
+export function signAndSend(kind: Kind, address: string, transaction: Uint8Array): Promise<string> {
   return prompt(async () => {
-    const standard = await standardAccount(address);
-    const feature = standard?.[0].features[SEND];
-    if (standard && feature) {
-      const [out] = await feature.signAndSendTransaction({ account: standard[1], transaction, chain: CHAIN });
+    const found = await standardAccount(kind, address);
+    const feature = found?.[0].features[SEND];
+    if (found && feature) {
+      const [out] = await feature.signAndSendTransaction({ account: found[1], transaction, chain: CHAIN });
       return b58encode(new Uint8Array(out.signature));
     }
     const { toVersioned } = await import('./legacy');
-    const { signature } = await provider().signAndSendTransaction(await toVersioned(transaction));
-    return String(signature);
+    const sent = await driver(kind).injected().signAndSendTransaction(await toVersioned(transaction));
+    // Phantom answers { signature }; Solflare's older API answers the signature itself.
+    return String(typeof sent === 'string' ? sent : sent.signature);
   });
 }

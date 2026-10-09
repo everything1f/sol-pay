@@ -21,24 +21,26 @@ const sol = el('sol');
 const note = el('note');
 const pad = el('pad');
 const payButton = el<HTMLButtonElement>('pay');
+const chooser = el('choose');
+const who = el<HTMLButtonElement>('who');
 const sum = el('sum');
 const slip = el('slip');
 const log = el('log');
 
-type Link = 'looking' | 'absent' | 'ask' | 'ready';
+// looking: waiting for a wallet to appear. absent: none on this page. choose: more than
+// one, and none picked yet. ask: picked but not connected. ready: connected.
+type Link = 'looking' | 'absent' | 'choose' | 'ask' | 'ready';
 const LINK_TEXT: Record<Link, string> = {
   looking: 'Connecting',
-  absent: 'Phantom not found',
+  absent: 'No wallet found',
+  choose: 'Choose a wallet',
   ask: 'Not connected',
   ready: '',
 };
-const PHASE_TEXT: Record<Phase, string> = {
-  quoting: 'Getting quote',
-  awaiting: 'Approve in Phantom',
-  sending: 'Sending',
-};
 
 let link: Link = 'looking';
+/** The wallet in use: the only one present, or the one picked. */
+let kind: wallet.Kind | undefined;
 let address: string | undefined;
 let value = '';
 let busy: Phase | undefined;
@@ -48,30 +50,43 @@ let warm: { taker: string; units: bigint; quote: Promise<Quote> } | undefined;
 let warmTimer = 0;
 let holdTimer = 0;
 
-// ?debug shows a running log on screen, for the first run inside Phantom on a phone.
+// ?debug shows a running log on screen, for the first run inside a wallet on a phone.
 const debugging = new URLSearchParams(location.search).has('debug');
 log.hidden = !debugging;
 function trace(line: string): void {
   if (debugging) log.textContent += `${line}\n`;
 }
 
-// Remembers one thing: that Jupiter refused a transaction signed by this Phantom,
-// so later payments let Phantom send instead. Nothing sensitive is stored.
+// Two small things are remembered between visits, neither of them sensitive.
+const memory = {
+  get: (key: string): string | null => {
+    try {
+      return localStorage.getItem(key);
+    } catch {
+      return null;
+    }
+  },
+  set: (key: string, value: string): void => {
+    try {
+      localStorage.setItem(key, value);
+    } catch {
+      /* private browsing: nothing is kept, and the page asks again next time */
+    }
+  },
+};
+
+// That Jupiter refused a transaction signed by this wallet, so later payments let
+// the wallet send instead. Kept per wallet; Phantom keeps its original key.
+const sendOnlyKey = () => (!kind || kind.id === 'phantom' ? 'send-only' : `send-only-${kind.id}`);
 const sendOnly = {
-  get: () => {
-    try {
-      return localStorage.getItem('send-only') === '1';
-    } catch {
-      return false;
-    }
-  },
-  set: () => {
-    try {
-      localStorage.setItem('send-only', '1');
-    } catch {
-      /* private browsing: fall back to asking again next time */
-    }
-  },
+  get: () => memory.get(sendOnlyKey()) === '1',
+  set: () => memory.set(sendOnlyKey(), '1'),
+};
+
+// Which wallet was picked last, for a browser that has more than one.
+const lastPick = {
+  get: () => memory.get('wallet'),
+  set: (id: string) => memory.set('wallet', id),
 };
 
 /* Drawing */
@@ -106,26 +121,42 @@ function setWords(text: string): void {
 function render(): void {
   app.dataset.state = done ? 'done' : busy ? 'busy' : 'entry';
   app.dataset.phase = busy ?? '';
-  const who = el('who');
-  who.textContent = link === 'ready' && address ? shorten(address) : LINK_TEXT[link];
+  // With one wallet the header shows the address alone, as it always has. With several
+  // it names the wallet too, and tapping it goes back to the choice.
+  const here = wallet.available();
+  const several = here.length > 1;
+  who.textContent =
+    link === 'ready' && address && kind ? `${several ? `${kind.name} ` : ''}${shorten(address)}` : LINK_TEXT[link];
   who.classList.toggle('on', link === 'ready');
+  who.disabled = !several || !kind || !!busy || done;
+  if (who.disabled) who.removeAttribute('title');
+  else who.title = 'Change wallet';
 
   const units = toUnits(value);
   if (units > 0n && price) sol.textContent = `≈ ${formatSol(lamportsFor(units, price.units))} SOL`;
   else if (price) sol.textContent = `1 SOL = $${formatUnits(price.units, 6, 2)}`;
   else sol.textContent = ' ';
 
+  // Without a wallet, or with a choice still to make, the Pay bar gives way to one
+  // button per wallet: "open in" when none is here, the wallet's name when several are.
+  const picking = !busy && !done && (link === 'absent' || link === 'choose');
+  chooser.hidden = !picking;
+  payButton.hidden = picking;
+  for (const option of chooser.querySelectorAll('button')) {
+    const name = wallet.supported.find((k) => k.id === option.dataset.wallet)?.name ?? '';
+    option.textContent = link === 'absent' ? `Open in ${name}` : name;
+    option.hidden = link === 'choose' && !here.some((k) => k.id === option.dataset.wallet);
+  }
+
+  const name = kind?.name ?? 'wallet';
   let words = 'Pay';
   let amount = '';
   let enabled = false;
   if (busy) {
-    words = PHASE_TEXT[busy];
+    words = busy === 'quoting' ? 'Getting quote' : busy === 'awaiting' ? `Approve in ${name}` : 'Sending';
     enabled = true; // stays lit while it reports progress; taps are ignored
-  } else if (link === 'absent') {
-    words = 'Open in Phantom';
-    enabled = true;
   } else if (link === 'ask') {
-    words = 'Connect Phantom';
+    words = `Connect ${name}`;
     enabled = true;
   } else {
     amount = units > 0n ? `$${formatUnits(units, 6, 2)}` : '';
@@ -230,7 +261,7 @@ function keepPriceFresh(): void {
   document.addEventListener('visibilitychange', tick);
 }
 
-/* Quote ahead: once the amount settles, fetch and check a quote so Pay can open Phantom at once. */
+/* Quote ahead: once the amount settles, fetch and check a quote so Pay can open the wallet at once. */
 
 function warmUp(): void {
   clearTimeout(warmTimer);
@@ -248,43 +279,93 @@ function warmUp(): void {
 /* Wallet */
 
 async function connect(silent: boolean): Promise<void> {
+  const using = kind;
+  if (!using) return;
   try {
-    address = await wallet.connect(silent);
+    const found = await wallet.connect(using, silent);
+    if (kind !== using) return; // a different wallet was picked while this one was answering
+    address = found;
     link = 'ready';
-    trace(`connected ${address}`);
-    const offers = await wallet.abilities(address);
-    trace(`phantom offers ${JSON.stringify(offers)}`);
-    // If this Phantom needs the older signing API, fetch that code now rather than on Pay.
+    trace(`connected ${using.name} ${address}`);
+    const offers = await wallet.abilities(using, address);
+    trace(`${using.name} offers ${JSON.stringify(offers)}`);
+    // If this wallet needs the older signing API, fetch that code now rather than on Pay.
     if (!offers.standardSign || !offers.standardSend) wallet.prepareLegacy();
   } catch (error) {
+    if (kind !== using) return;
     link = 'ask';
-    if (!silent && !(error instanceof wallet.Rejected)) say(`Phantom could not connect: ${text(error)}`);
+    if (!silent && !(error instanceof wallet.Rejected)) say(`${using.name} could not connect: ${text(error)}`);
   }
   render();
   warmUp();
 }
 
+const watched = new Set<string>();
+const isReady = (): boolean => link === 'ready';
+
+/** Starts using a wallet: connects without a prompt if the site is already trusted, otherwise asks. */
+async function use(next: wallet.Kind): Promise<void> {
+  kind = next;
+  address = undefined;
+  link = 'looking';
+  lastPick.set(next.id);
+  render();
+  if (!watched.has(next.id)) {
+    watched.add(next.id);
+    wallet.onAccountChange(next, (changed) => {
+      if (kind !== next) return; // news from a wallet that is no longer the one in use
+      address = changed;
+      link = changed ? 'ready' : 'ask';
+      render();
+      warmUp();
+    });
+  }
+  await connect(true);
+  // First visit: the wallet asks to trust the site once.
+  if (kind === next && !isReady()) await connect(false);
+}
+
 async function findWallet(): Promise<void> {
-  // Phantom injects before the page runs. If it is missing, say so almost at once,
+  // A wallet injects before the page runs. If none is here, say so almost at once,
   // but keep looking for a few seconds in case a browser extension is slow to load.
-  for (let i = 0; !wallet.provider(); i++) {
+  let found = wallet.available();
+  for (let i = 0; !found.length; i++) {
     if (i === 2) {
       link = 'absent';
-      trace('no Phantom provider on this page');
+      trace('no wallet on this page');
       render();
     }
     if (i === 40) return;
     await new Promise((r) => setTimeout(r, 100));
+    found = wallet.available();
   }
-  wallet.onAccountChange((next) => {
-    address = next;
-    link = next ? 'ready' : 'ask';
-    render();
-    warmUp();
-  });
-  await connect(true);
-  if (link !== 'ready') await connect(false); // first visit: Phantom asks to trust the site once
+  // Inside a wallet's own browser there is exactly one. A computer may have both
+  // extensions: use the one picked last time, or ask.
+  const pick = found.length === 1 ? found[0] : found.find((k) => k.id === lastPick.get());
+  if (pick) return use(pick);
+  link = 'choose';
+  render();
 }
+
+chooser.addEventListener('click', (event) => {
+  const option = (event.target as Element).closest('button');
+  const picked = wallet.supported.find((k) => k.id === option?.dataset.wallet);
+  if (!picked) return;
+  if (link === 'absent') location.href = wallet.browseLink(picked, location.href, location.origin);
+  else void use(picked);
+});
+
+// The wallet's name in the header: back to the choice.
+who.addEventListener('click', () => {
+  if (who.disabled) return;
+  clearTimeout(warmTimer);
+  warm = undefined;
+  kind = undefined;
+  address = undefined;
+  link = 'choose';
+  say('');
+  render();
+});
 
 /* Pay */
 
@@ -299,16 +380,12 @@ function explain(error: unknown): string {
 
 async function onPay(): Promise<void> {
   if (busy || done) return;
-  if (link === 'absent') {
-    const here = encodeURIComponent(location.href);
-    location.href = `https://phantom.com/ul/browse/${here}?ref=${encodeURIComponent(location.origin)}`;
-    return;
-  }
   if (link === 'ask') return connect(false);
 
+  const using = kind;
   const taker = address;
   const units = toUnits(value);
-  if (link !== 'ready' || !taker || units <= 0n) return;
+  if (link !== 'ready' || !using || !taker || units <= 0n) return;
 
   clearTimeout(warmTimer);
   const ready = warm && warm.taker === taker && warm.units === units ? warm.quote : undefined;
@@ -321,7 +398,7 @@ async function onPay(): Promise<void> {
   phase('quoting');
 
   try {
-    const offers = await wallet.abilities(taker);
+    const offers = await wallet.abilities(using, taker);
     const outcome = await pay({
       taker,
       units,
@@ -329,8 +406,8 @@ async function onPay(): Promise<void> {
       price: livePrice,
       phase,
       canSign: offers.standardSign || offers.providerSign,
-      sign: (transaction) => wallet.sign(taker, transaction),
-      signAndSend: (transaction) => wallet.signAndSend(taker, transaction),
+      sign: (transaction) => wallet.sign(using, taker, transaction),
+      signAndSend: (transaction) => wallet.signAndSend(using, taker, transaction),
       sendOnly: sendOnly.get,
       rememberSendOnly: sendOnly.set,
       trace,
@@ -340,7 +417,7 @@ async function onPay(): Promise<void> {
   } catch (error) {
     busy = undefined;
     trace(`stopped: ${text(error)}`);
-    // Dismissing Phantom's prompt is not an error: back to the keypad, amount intact.
+    // Dismissing the wallet's prompt is not an error: back to the keypad, amount intact.
     if (!(error instanceof wallet.Rejected)) say(explain(error));
     render();
   }
@@ -353,11 +430,12 @@ payButton.addEventListener('click', () => void onPay());
 function showSlip(outcome: Outcome): void {
   const paid = outcome.kind === 'paid';
   slip.dataset.kind = outcome.kind;
-  el('slipTitle').textContent = paid ? 'Paid' : outcome.kind === 'sent' ? 'Sent by Phantom' : 'Not confirmed';
+  const name = kind?.name ?? 'The wallet';
+  el('slipTitle').textContent = paid ? 'Paid' : outcome.kind === 'sent' ? `Sent by ${name}` : 'Not confirmed';
   el('slipNote').textContent = paid
     ? ''
     : outcome.kind === 'sent'
-      ? 'Phantom submitted this one, so this page cannot watch it land. Solscan shows the result.'
+      ? `${name} submitted this one, so this page cannot watch it land. Solscan shows the result.`
       : 'It was submitted, but no confirmation came back. Check Solscan before paying again.';
   el('usdcLabel').textContent = paid ? 'USDC delivered' : 'USDC to deliver';
   el('solLabel').textContent = paid ? 'SOL spent' : 'SOL, at most';

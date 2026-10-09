@@ -28,7 +28,7 @@ interface Amounts {
 export type Outcome =
   /** Jupiter confirmed it on-chain. */
   | ({ kind: 'paid' } & Amounts)
-  /** Phantom broadcast it; this page has no way to watch for confirmation. */
+  /** The wallet broadcast it; this page has no way to watch for confirmation. */
   | ({ kind: 'sent' } & Amounts)
   /** It was submitted but nobody confirmed the result. It may still land. */
   | ({ kind: 'unconfirmed' } & Amounts);
@@ -41,11 +41,11 @@ export interface Hands {
   /** A quote fetched while the amount was being typed, if any. */
   warm?: Promise<Quote>;
   phase(phase: Phase): void;
-  /** Whether this Phantom can sign without sending. */
+  /** Whether this wallet can sign without sending. */
   canSign: boolean;
   sign(transaction: Uint8Array): Promise<Uint8Array>;
   signAndSend(transaction: Uint8Array): Promise<string>;
-  /** True once Jupiter has refused a transaction signed by this Phantom. */
+  /** True once Jupiter has refused a transaction signed by this wallet. */
   sendOnly(): boolean;
   rememberSendOnly(): void;
   trace(line: string): void;
@@ -121,7 +121,7 @@ export async function quote(taker: string, units: bigint, price: bigint): Promis
 // /execute result codes, grouped by what they say about the transaction's fate.
 /** Never broadcast: the quote had gone stale. Quoting again cannot pay twice. */
 const STALE = new Set([-1, -1004, -2003]);
-/** Never broadcast: Jupiter would not take the signed copy Phantom returned. */
+/** Never broadcast: Jupiter would not take the signed copy the wallet returned. */
 const UNACCEPTED = new Set([-2, -3, -1003]);
 /** Never broadcast: Jupiter judged the transaction invalid. */
 const INVALID = new Set([-1002, -2002, -2004]);
@@ -147,12 +147,12 @@ export async function pay(h: Hands): Promise<Outcome> {
     h.phase('awaiting');
     if (!h.canSign || h.sendOnly()) {
       const signature = await h.signAndSend(bytes);
-      h.trace('Phantom signed and sent');
+      h.trace('wallet signed and sent');
       return { kind: 'sent', signature, usdc: delivers, lamports: spends };
     }
 
     const signed = await h.sign(bytes);
-    h.trace(sameMessage(bytes, signed) ? 'Phantom signed it unchanged' : 'Phantom changed the transaction while signing');
+    h.trace(sameMessage(bytes, signed) ? 'wallet signed it unchanged' : 'wallet changed the transaction while signing');
     const amounts = { signature: signatureOf(signed), usdc: delivers, lamports: spends };
 
     h.phase('sending');
