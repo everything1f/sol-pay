@@ -1,0 +1,9 @@
+// Settings for Cloudflare Workers: serve the built files in dist/ and nothing else.
+// There is no Worker script; this is a static site.
+{
+  "name": "sol-pay",
+  "compatibility_date": "2026-10-01",
+  "assets": {
+    "directory": "./dist"
+  }
+}

@@ -85,8 +85,17 @@ signing path was used, and what Jupiter answered. Useful for the first run on a 
 
 ## Deploying
 
-`netlify.toml` holds the build command, the publish directory and the security headers.
-The Content-Security-Policy allows the page's own files and `https://api.jup.ag` only.
+The repo deploys as it is on Cloudflare or Netlify. On every host the build command is
+`npm run build` and the output directory is `dist`.
+
+| Host | What reads what |
+| --- | --- |
+| Cloudflare Workers | `wrangler.jsonc` points at `dist`. Deploy command: `npx wrangler deploy` |
+| Cloudflare Pages | Set the build command and output directory in the dashboard |
+| Netlify | `netlify.toml` holds the build settings |
+
+The security headers are in `public/_headers`, a format all three read. The
+Content-Security-Policy allows the page's own files and `https://api.jup.ag` only.
 
 If the page ever shows "Phantom not found" while open inside Phantom, the policy is the
 first thing to check: it would mean Phantom injects its wallet in a way the policy blocks.
