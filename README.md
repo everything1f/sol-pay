@@ -94,6 +94,11 @@ The repo deploys as it is on Cloudflare or Netlify. On every host the build comm
 | Cloudflare Pages | Set the build command and output directory in the dashboard |
 | Netlify | `netlify.toml` holds the build settings |
 
+To deploy to Cloudflare by hand, run `npx wrangler login` once, then `npm run deploy`.
+It uses the version of Wrangler pinned in `package-lock.json`, not whatever is newest.
+`npm run fingerprint` prints the SHA-256 of every file the site serves, for checking a
+deployment against the build.
+
 The security headers are in `public/_headers`, a format all three read. The
 Content-Security-Policy allows the page's own files and `https://api.jup.ag` only.
 
