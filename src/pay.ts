@@ -62,6 +62,19 @@ function usable({ status, body }: Reply<Order>): Order {
   return body;
 }
 
+/**
+ * Jupiter answers a wallet holding no SOL with a bare "failed to get quotes".
+ * Asking again without naming a wallet tells the two cases apart: if that
+ * succeeds, the wallet is the problem and not the swap.
+ */
+async function whyNoQuote(lamports: bigint, reply: Reply<Order>): Promise<Failed> {
+  const anyone = await getOrder(undefined, lamports, 'ExactIn').catch(() => undefined);
+  if (anyone?.status === 200 && anyone.body?.outAmount) {
+    return new Failed('Jupiter would not build a payment for this wallet, which usually means it holds no SOL. Nothing was sent.');
+  }
+  return new Failed(`Jupiter could not quote this (${reply.body?.error ?? reply.status}). Nothing was sent.`);
+}
+
 /** Gets a quote whose transaction has passed every check in verify.ts. */
 export async function quote(taker: string, units: bigint, price: bigint): Promise<Quote> {
   const cap = spendCap(units, price, PRICE_MARGIN_BPS);
@@ -85,7 +98,9 @@ export async function quote(taker: string, units: bigint, price: bigint): Promis
   const exactIn = async (): Promise<Quote> => {
     let input = firstInput(units, price, 60n);
     for (let round = 0; ; round++) {
-      const order = usable(await getOrder(taker, input, 'ExactIn'));
+      const reply = await getOrder(taker, input, 'ExactIn');
+      if (reply.status === 400) throw await whyNoQuote(input, reply);
+      const order = usable(reply);
       const text = order.otherAmountThreshold ?? '';
       const guaranteed = /^\d+$/.test(text) ? BigInt(text) : 0n;
       if (guaranteed <= 0n) throw new Failed('Jupiter returned a quote with no guaranteed amount.');

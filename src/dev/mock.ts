@@ -17,6 +17,7 @@ const CASES: Record<string, string> = {
   'wrong-receiver': 'Refused: wrong destination',
   overpriced: 'Refused: costs too much SOL',
   short: 'Not enough SOL',
+  empty: 'Wallet with no SOL at all',
   limited: 'Jupiter rate-limits',
   offline: 'Jupiter unreachable',
   lost: 'Sent, confirmation lost',
@@ -159,9 +160,12 @@ function installJupiter(scenario: string, pace: number): void {
   let executions = 0;
 
   const order = (query: URLSearchParams): Response => {
-    const taker = query.get('taker')!;
+    const taker = query.get('taker') ?? '';
     const amount = BigInt(query.get('amount')!);
     const exactOut = query.get('swapMode') === 'ExactOut';
+    // With no wallet named, Jupiter returns a bare quote and no transaction.
+    if (!taker) return json({ swapMode: query.get('swapMode'), outAmount: '1', transaction: null });
+    if (scenario === 'empty') return json({ error: 'Failed to get quotes' }, 400);
 
     if (scenario === 'limited') {
       return json({ error: 'Rate limit exceeded' }, 429, { 'x-ratelimit-reset': String(Math.ceil(Date.now() / 1000) + 1) });

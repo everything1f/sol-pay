@@ -13,7 +13,7 @@ and Phantom does all the signing.
    the SOL price so it can show "≈ X SOL" as you type.
 2. Shortly after you stop typing it asks Jupiter for a quote in the background, so Pay
    can open Phantom without waiting.
-3. On Pay it takes that quote, or a fresh one if the first is older than 8 seconds. The
+3. On Pay it takes that quote, or a fresh one if the first is older than 4 seconds. The
    quote is ExactOut: Coinbase receives exactly the amount typed, and the SOL spent is
    capped.
 4. The transaction is checked (see below). If any check fails, nothing is sent to Phantom.

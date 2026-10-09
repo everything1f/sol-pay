@@ -57,17 +57,17 @@ export async function getPrice(): Promise<number> {
 /**
  * A quote plus an unsigned SOL-to-USDC transaction that pays RECEIVER.
  * `amount` is USDC base units for ExactOut and lamports for ExactIn.
+ * Without a `taker` Jupiter returns the quote alone, with no transaction.
  * Only Jupiter's on-chain router is allowed: its transactions send the USDC
  * straight to RECEIVER and have a layout verify.ts can read.
  */
-export function getOrder(taker: string, amount: bigint, mode: Mode): Promise<Reply<Order>> {
+export function getOrder(taker: string | undefined, amount: bigint, mode: Mode): Promise<Reply<Order>> {
   const query = new URLSearchParams({
     inputMint: SOL_MINT,
     outputMint: USDC_MINT,
     amount: amount.toString(),
     swapMode: mode,
-    taker,
-    receiver: RECEIVER,
+    ...(taker ? { taker, receiver: RECEIVER } : {}),
     excludeRouters: 'jupiterz,dflow,okx',
     // Jupiter picks the priority fee, but never above this.
     priorityFeeLamports: MAX_PRIORITY_FEE.toString(),

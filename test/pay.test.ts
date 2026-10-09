@@ -4,10 +4,10 @@ import { fakeKey, forgeOrder, type Recipe } from '../src/dev/forge';
 import type { Execution, Reply } from '../src/jupiter';
 import type { Mode, Order } from '../src/verify';
 
-const getOrder = vi.fn<(taker: string, amount: bigint, mode: Mode) => Promise<Reply<Order>>>();
+const getOrder = vi.fn<(taker: string | undefined, amount: bigint, mode: Mode) => Promise<Reply<Order>>>();
 const execute = vi.fn<(signed: string, requestId: string) => Promise<Reply<Execution>>>();
 vi.mock('../src/jupiter', () => ({
-  getOrder: (...a: [string, bigint, Mode]) => getOrder(...a),
+  getOrder: (...a: [string | undefined, bigint, Mode]) => getOrder(...a),
   execute: (...a: [string, string]) => execute(...a),
 }));
 
@@ -115,6 +115,20 @@ describe('quote', () => {
   it('refuses a quote priced more than 3% above the live price', async () => {
     getOrder.mockResolvedValue(exactOut({ second: 236_000_000n }));
     await expect(quote(TAKER, UNITS, PRICE)).rejects.toThrow(/more SOL than the live price allows/);
+  });
+
+  it('explains an empty wallet, which Jupiter reports only as a failed quote', async () => {
+    getOrder.mockImplementation(async (taker) =>
+      taker
+        ? { status: 400, body: { error: 'Failed to get quotes' } }
+        : { status: 200, body: { swapMode: 'ExactIn', outAmount: '25000000', transaction: null } },
+    );
+    await expect(quote(TAKER, UNITS, PRICE)).rejects.toThrow(/usually means it holds no SOL/);
+  });
+
+  it('reports a failed quote as such when nobody can get one', async () => {
+    getOrder.mockResolvedValue({ status: 400, body: { error: 'Failed to get quotes' } });
+    await expect(quote(TAKER, UNITS, PRICE)).rejects.toThrow('Jupiter could not quote this (Failed to get quotes). Nothing was sent.');
   });
 
   it('says so when the wallet is short of SOL', async () => {

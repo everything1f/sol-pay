@@ -23,7 +23,11 @@ export const PRICE_MARGIN_BPS = 300n;
  */
 export const MAX_PRIORITY_FEE = 5_000n;
 
-/** A quote fetched while typing is reused on Pay only if it is younger than this. */
-export const WARM_QUOTE_MS = 8_000;
+/**
+ * A quote fetched while typing is reused on Pay only if it is younger than this.
+ * A quote can be signed for roughly 20 seconds after Jupiter issues it, so an old
+ * one leaves little time to approve in Phantom.
+ */
+export const WARM_QUOTE_MS = 4_000;
 
 export const JUPITER = 'https://api.jup.ag';
