@@ -1,0 +1,517 @@
+/* Two faces, both cut down to the characters used and inlined by the build, so
+   text never appears in a fallback font first. Tag sets the numerals, Words the rest. */
+@font-face {
+  font-family: Tag;
+  src: url('./assets/numerals.woff2') format('woff2');
+  font-weight: 700;
+  font-display: block;
+}
+
+@font-face {
+  font-family: Words;
+  src: url('./assets/words-500.woff2') format('woff2');
+  font-weight: 500;
+  font-display: block;
+}
+
+@font-face {
+  font-family: Words;
+  src: url('./assets/words-600.woff2') format('woff2');
+  font-weight: 600;
+  font-display: block;
+}
+
+:root {
+  --ground: #0e1a15;
+  --paper: #efeadb;
+  --sage: #8fa094;
+  --press: rgb(239 234 219 / 0.1);
+  --coral: #ff8a75;
+  --ink-soft: rgb(14 26 21 / 0.62);
+
+  --numerals: Tag, 'Arial Narrow', 'Roboto Condensed', system-ui, sans-serif;
+  --words: Words, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+
+  --edge: 24px;
+  --out: cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+}
+
+html {
+  height: 100%;
+  background: var(--ground);
+  color: var(--paper);
+  font: 500 16px/1.35 var(--words);
+  -webkit-text-size-adjust: 100%;
+  /* No double-tap zoom, no rubber-banding, no long-press menus: it is a keypad. */
+  touch-action: manipulation;
+  overscroll-behavior: none;
+}
+
+body {
+  height: 100%;
+  overflow: hidden;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  touch-action: manipulation;
+}
+
+button:focus-visible,
+a:focus-visible {
+  outline: 2px solid var(--paper);
+  outline-offset: 2px;
+}
+
+main {
+  position: relative;
+  height: 100%;
+  height: 100dvh;
+  max-width: 440px;
+  margin: 0 auto;
+  padding: max(14px, env(safe-area-inset-top)) 0 max(14px, env(safe-area-inset-bottom));
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  overflow: hidden;
+}
+
+/* From, to */
+
+.route {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 var(--edge);
+  font-size: 14px;
+  letter-spacing: 0.01em;
+  color: var(--sage);
+  white-space: nowrap;
+}
+
+.route b,
+.route .on {
+  font-weight: inherit;
+  color: var(--paper);
+}
+
+/* The amount, set like a shelf price: dollars large, cents raised */
+
+.amount {
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: 0 var(--edge) 6px;
+  min-height: 0;
+}
+
+.tag {
+  display: flex;
+  align-items: flex-start;
+  font: 700 min(37vw, 22dvh, 164px) / 0.8 var(--numerals);
+  font-variant-numeric: lining-nums;
+}
+
+.tag span {
+  display: flex;
+}
+
+.tag i {
+  font-style: normal;
+  animation: rise 0.17s var(--out) backwards;
+}
+
+.tag .cur {
+  font-size: 0.36em;
+  line-height: 0.8;
+  margin: 0.14em 0.16em 0 0;
+  color: var(--sage);
+}
+
+.tag .cents {
+  font-size: 0.42em;
+  line-height: 0.8;
+  margin: 0.12em 0 0 0.05em;
+}
+
+.tag .ghost {
+  opacity: 0.22;
+  animation: none;
+}
+
+.ghost[hidden] {
+  display: none;
+}
+
+/* A refused key gets a small sideways nudge, nothing more. */
+.nudge {
+  animation: nudge 0.26s cubic-bezier(0.3, 0.6, 0.3, 1);
+}
+
+.sol {
+  margin-top: 16px;
+  color: var(--sage);
+  font-variant-numeric: tabular-nums;
+}
+
+.note {
+  margin-top: 6px;
+  min-height: 2.7em;
+  font-size: 15px;
+  color: var(--coral);
+  text-wrap: pretty;
+}
+
+.note:not(:empty) {
+  animation: appear 0.35s ease-out backwards;
+}
+
+/* Keypad: nothing but numerals until a key is pressed */
+
+.pad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  padding: 0 12px;
+  transition: opacity 0.2s;
+}
+
+.pad button {
+  position: relative;
+  height: clamp(46px, 9.4dvh, 74px);
+  font: 700 clamp(28px, 4.6dvh, 36px) / 1 var(--numerals);
+}
+
+.pad button::before {
+  content: '';
+  position: absolute;
+  inset: 3px 5px;
+  border-radius: 14px;
+  background: var(--press);
+  opacity: 0;
+  transform: scale(0.94);
+  transition:
+    opacity 0.3s,
+    transform 0.3s var(--out);
+}
+
+.pad button span {
+  position: relative;
+  display: grid;
+  place-items: center;
+  height: 100%;
+  transition: transform 0.22s var(--out);
+}
+
+/* Instant on the way down, eased on the way back up. */
+.pad .down::before {
+  opacity: 1;
+  transform: none;
+  transition-duration: 0s;
+}
+
+.pad .down span {
+  transform: scale(0.88);
+  transition-duration: 0s;
+}
+
+/* Pay */
+
+.pay {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  height: 62px;
+  margin: 10px var(--edge) 0;
+  padding: 0 22px;
+  border-radius: 16px;
+  box-shadow: inset 0 0 0 1.5px rgb(239 234 219 / 0.22);
+  color: var(--ground);
+  font-weight: 600;
+  font-size: 19px;
+  letter-spacing: 0.005em;
+  overflow: hidden;
+  transition: transform 0.18s var(--out);
+}
+
+/* The fill is its own layer so that arriving and leaving is an opacity change. */
+.pay::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--paper);
+  transition: opacity 0.22s;
+}
+
+.pay > * {
+  position: relative;
+}
+
+.pay:disabled {
+  color: var(--sage);
+  cursor: default;
+}
+
+.pay:disabled::before {
+  opacity: 0;
+}
+
+.pay.down {
+  transform: scale(0.98);
+  transition-duration: 0s;
+}
+
+.pay .words {
+  animation: rise 0.2s var(--out) backwards;
+}
+
+.pay .sum {
+  font: 700 30px/1 var(--numerals);
+}
+
+/* A bar that runs along the bottom while the page is waiting on the network. */
+.pay::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 45%;
+  height: 3px;
+  background: var(--ground);
+  opacity: 0;
+  transform: translateX(-100%);
+}
+
+[data-phase='quoting'] .pay::after,
+[data-phase='sending'] .pay::after {
+  opacity: 0.55;
+  animation: run 0.9s linear infinite;
+}
+
+/* A dot that breathes while Phantom has the decision. */
+.pulse {
+  display: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--ground);
+  animation: breathe 1.2s ease-in-out infinite;
+}
+
+[data-phase='awaiting'] .pulse {
+  display: block;
+}
+
+[data-state='busy'] .pad {
+  opacity: 0.28;
+  pointer-events: none;
+}
+
+/* The receipt */
+
+.slip {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: max(14px, env(safe-area-inset-bottom));
+  padding: 34px 22px 18px;
+  border-radius: 0 0 18px 18px;
+  background: var(--paper);
+  color: var(--ground);
+  /* A torn top edge: a row of 14px teeth. */
+  -webkit-mask: conic-gradient(from 135deg at top, #0000, #000 1deg 89deg, #0000 90deg) 50% / 14px 100%;
+  mask: conic-gradient(from 135deg at top, #0000, #000 1deg 89deg, #0000 90deg) 50% / 14px 100%;
+  transform: translateY(calc(100% + 40px));
+  visibility: hidden;
+  transition:
+    transform 0.55s cubic-bezier(0.16, 1, 0.3, 1),
+    visibility 0s 0.55s;
+}
+
+[data-state='done'] .slip {
+  transform: none;
+  visibility: visible;
+  transition-delay: 0s;
+}
+
+[data-state='done'] .pad,
+[data-state='done'] .pay {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.slip h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 26px;
+  font-weight: 600;
+}
+
+.tick {
+  display: none;
+  stroke-dasharray: 26;
+  stroke-dashoffset: 26;
+}
+
+.slip[data-kind='paid'] .tick {
+  display: block;
+}
+
+[data-state='done'] .tick {
+  animation: draw 0.4s 0.3s var(--out) forwards;
+}
+
+.slip-note {
+  margin-top: 8px;
+  font-size: 15px;
+  color: var(--ink-soft);
+  text-wrap: pretty;
+}
+
+.slip-note:empty {
+  display: none;
+}
+
+.slip dl {
+  margin: 16px 0 20px;
+}
+
+.slip dl div {
+  display: flex;
+  align-items: baseline;
+  padding: 7px 0;
+}
+
+/* Dotted leaders between label and figure, as on a till receipt. */
+.slip dl div::after {
+  content: '';
+  order: 1;
+  flex: 1;
+  margin: 0 8px;
+  border-bottom: 1.5px dotted rgb(14 26 21 / 0.35);
+  transform: translateY(-3px);
+}
+
+.slip dt {
+  color: var(--ink-soft);
+}
+
+.slip dd {
+  order: 2;
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.slip a {
+  color: inherit;
+  text-underline-offset: 3px;
+}
+
+#again {
+  width: 100%;
+  height: 54px;
+  border-radius: 14px;
+  background: var(--ground);
+  color: var(--paper);
+  font-weight: 600;
+  font-size: 18px;
+}
+
+#again:focus-visible,
+.slip a:focus-visible {
+  outline-color: var(--ground);
+}
+
+/* Shown with ?debug: what Phantom offered and what happened, for the first run on a phone. */
+.log {
+  position: fixed;
+  inset: 0 0 auto 0;
+  z-index: 5;
+  max-height: 38%;
+  overflow: auto;
+  padding: 8px 10px;
+  background: rgb(0 0 0 / 0.86);
+  color: #d7e3d9;
+  font: 11px/1.45 ui-monospace, Menlo, Consolas, monospace;
+  white-space: pre-wrap;
+  word-break: break-all;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(0.14em);
+  }
+}
+
+@keyframes appear {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes nudge {
+  35% {
+    transform: translateX(-3px);
+  }
+  70% {
+    transform: translateX(1.5px);
+  }
+}
+
+@keyframes run {
+  to {
+    transform: translateX(225%);
+  }
+}
+
+@keyframes breathe {
+  50% {
+    opacity: 0.25;
+    transform: scale(0.8);
+  }
+}
+
+@keyframes draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+
+  [data-phase='quoting'] .pay::after,
+  [data-phase='sending'] .pay::after {
+    width: 100%;
+    transform: none;
+    animation: none;
+  }
+}

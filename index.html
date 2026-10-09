@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0e1a15" />
+    <meta name="color-scheme" content="dark" />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="description" content="Pay a dollar amount from SOL to a Coinbase USDC balance." />
+    <title>Pay</title>
+    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="/src/style.css" />
+    <script type="module" src="/src/main.ts"></script>
+  </head>
+  <body>
+    <main id="app" data-state="entry">
+      <header class="route">
+        <span id="who">Connecting</span>
+        <span>to Coinbase <b id="dest"></b></span>
+      </header>
+
+      <section class="amount">
+        <div class="tag" id="tag" role="status" aria-label="No amount">
+          <span class="cur" aria-hidden="true">$</span>
+          <span class="whole" id="whole" aria-hidden="true"><i class="ghost" id="ghost">0</i></span>
+          <span class="cents" id="cents" aria-hidden="true"></span>
+        </div>
+        <p class="sol" id="sol">&nbsp;</p>
+        <p class="note" id="note" role="alert"></p>
+      </section>
+
+      <div class="pad" id="pad">
+        <button type="button" data-key="1"><span>1</span></button>
+        <button type="button" data-key="2"><span>2</span></button>
+        <button type="button" data-key="3"><span>3</span></button>
+        <button type="button" data-key="4"><span>4</span></button>
+        <button type="button" data-key="5"><span>5</span></button>
+        <button type="button" data-key="6"><span>6</span></button>
+        <button type="button" data-key="7"><span>7</span></button>
+        <button type="button" data-key="8"><span>8</span></button>
+        <button type="button" data-key="9"><span>9</span></button>
+        <button type="button" data-key="." aria-label="Decimal point"><span>.</span></button>
+        <button type="button" data-key="0"><span>0</span></button>
+        <button type="button" data-key="back" aria-label="Delete. Hold to clear.">
+          <span>
+            <svg viewBox="0 0 28 20" width="28" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M9.5 1.5H25a1.5 1.5 0 0 1 1.5 1.5v14a1.5 1.5 0 0 1-1.5 1.5H9.5L1.8 10z" />
+              <path d="M13.5 6.5l7 7m0-7l-7 7" />
+            </svg>
+          </span>
+        </button>
+      </div>
+
+      <button type="button" class="pay" id="pay" disabled>
+        <span class="words" id="words">Pay</span>
+        <span class="sum" id="sum"></span>
+        <i class="pulse" aria-hidden="true"></i>
+      </button>
+
+      <section class="slip" id="slip" aria-hidden="true">
+        <h2>
+          <svg class="tick" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M4 12.8l5.2 5.2L20 6.5" />
+          </svg>
+          <span id="slipTitle">Paid</span>
+        </h2>
+        <p class="slip-note" id="slipNote"></p>
+        <dl>
+          <div><dt>To</dt><dd>Coinbase <span id="slipDest"></span></dd></div>
+          <div><dt id="usdcLabel">USDC delivered</dt><dd id="outUsdc"></dd></div>
+          <div><dt id="solLabel">SOL spent</dt><dd id="outSol"></dd></div>
+          <div><dt>Transaction</dt><dd><a id="outTx" target="_blank" rel="noopener noreferrer"></a></dd></div>
+        </dl>
+        <button type="button" id="again">New payment</button>
+      </section>
+
+      <pre class="log" id="log" hidden></pre>
+    </main>
+  </body>
+</html>
