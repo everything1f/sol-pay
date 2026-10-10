@@ -45,7 +45,7 @@ export interface Hands {
   canSign: boolean;
   sign(transaction: Uint8Array): Promise<Uint8Array>;
   signAndSend(transaction: Uint8Array): Promise<string>;
-  /** True if the wallet always sends, or once Jupiter has refused a transaction it signed. */
+  /** True once Jupiter has refused a transaction signed by this wallet. */
   sendOnly(): boolean;
   rememberSendOnly(): void;
   trace(line: string): void;

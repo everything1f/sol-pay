@@ -37,11 +37,6 @@ interface Driver extends Kind {
    * Solflare documents no such option, so its Wallet Standard connect is used.
    */
   connectVia: 'injected' | 'standard';
-  /**
-   * Whether the wallet broadcasts the transaction itself. Otherwise it only signs
-   * and Jupiter broadcasts. Solflare is asked to send, which is what wallets recommend.
-   */
-  sends: boolean;
 }
 
 const DRIVERS: readonly Driver[] = [
@@ -50,7 +45,6 @@ const DRIVERS: readonly Driver[] = [
     name: 'Phantom',
     browse: 'https://phantom.com/ul/browse/',
     connectVia: 'injected',
-    sends: false,
     injected: () => {
       const provider = (window as any).phantom?.solana;
       return provider?.isPhantom ? provider : undefined;
@@ -61,7 +55,6 @@ const DRIVERS: readonly Driver[] = [
     name: 'Solflare',
     browse: 'https://solflare.com/ul/v1/browse/',
     connectVia: 'standard',
-    sends: true,
     injected: () => {
       const provider = (window as any).solflare;
       return provider?.isSolflare ? provider : undefined;
@@ -106,11 +99,6 @@ export function available(): Kind[] {
 /** A link that opens `page` inside the wallet's own browser. */
 export function browseLink(kind: Kind, page: string, origin: string): string {
   return `${driver(kind).browse}${encodeURIComponent(page)}?ref=${encodeURIComponent(origin)}`;
-}
-
-/** Whether this wallet is asked to broadcast the transaction itself rather than only sign it. */
-export function sendsItself(kind: Kind): boolean {
-  return driver(kind).sends;
 }
 
 /** Whether to talk to the wallet's injected object rather than its Wallet Standard entry. */

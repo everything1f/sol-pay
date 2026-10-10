@@ -226,11 +226,6 @@ describe('Phantom, unchanged', () => {
     expect(theirs.signTransaction).not.toHaveBeenCalled();
     expect(theirs.connect).not.toHaveBeenCalled();
   });
-
-  it('still only signs, leaving Jupiter to send', async () => {
-    const { wallet, phantom } = await page({ phantom: injected('Phantom') });
-    expect(wallet.sendsItself(phantom)).toBe(false);
-  });
 });
 
 describe('Solflare', () => {
@@ -259,19 +254,6 @@ describe('Solflare', () => {
     await wallet.connect(solflare, false);
     expect(await wallet.sign(solflare, ADDRESS, transaction)).toEqual(signedCopy);
     expect(entry.signTransaction).toHaveBeenCalledExactlyOnceWith({
-      account: { address: ADDRESS },
-      transaction,
-      chain: 'solana:mainnet',
-    });
-  });
-
-  it('is asked to send the transaction itself', async () => {
-    const entry = standard('Solflare');
-    const { wallet, solflare } = await page({ solflare: injected('Solflare'), standard: [entry] });
-    await wallet.connect(solflare, false);
-    expect(wallet.sendsItself(solflare)).toBe(true);
-    expect(await wallet.signAndSend(solflare, ADDRESS, transaction)).toBe(b58encode(new Uint8Array(64).fill(9)));
-    expect(entry.signAndSendTransaction).toHaveBeenCalledExactlyOnceWith({
       account: { address: ADDRESS },
       transaction,
       chain: 'solana:mainnet',

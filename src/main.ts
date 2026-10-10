@@ -408,7 +408,7 @@ async function onPay(): Promise<void> {
       canSign: offers.standardSign || offers.providerSign,
       sign: (transaction) => wallet.sign(using, taker, transaction),
       signAndSend: (transaction) => wallet.signAndSend(using, taker, transaction),
-      sendOnly: () => wallet.sendsItself(using) || sendOnly.get(),
+      sendOnly: sendOnly.get,
       rememberSendOnly: sendOnly.set,
       trace,
     });
