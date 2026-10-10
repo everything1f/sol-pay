@@ -33,6 +33,10 @@ which to use, remembers the answer, and lets you change it by tapping the wallet
 in the header. Opened where there is no wallet, it offers a link into each wallet's
 browser. Any other wallet is ignored.
 
+Phantom signs and Jupiter sends, as described above. Solflare is asked to send the
+transaction itself, so its receipt reads "Sent by Solflare" and links to Solscan for the
+result.
+
 ## Safety checks
 
 Every quote must pass all of these before the wallet is asked to sign (`src/verify.ts`):
